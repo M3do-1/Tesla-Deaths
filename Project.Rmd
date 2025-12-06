@@ -1,0 +1,56 @@
+---
+title: "Final Project (Tesla Death)"
+author: "Group 4 (CDS 101)"
+date: "2025-12-01"
+output: pdf_document
+---
+
+```{r}
+library(tidyverse)
+
+library(dplyr)
+
+```
+
+```{r}
+Tesla_Deaths_Deaths_1_ <- read_csv("Tesla_Deaths_Deaths_1_.csv")
+
+New_Tesla <- Tesla_Deaths_Deaths_1_ %>%
+mutate(
+Dscrip = if_else(
+str_detect(Description, "DUI"),
+"DUI",
+"other"
+)
+)
+```
+
+
+
+view(New_Tesla)
+
+
+```{r}
+New_Tesla %>%
+ggplot() +
+geom_freqpoly(aes(x = Year, color = Dscrip, )) +
+labs(
+title = "DUI",
+x = "year",
+y = "Description"
+)
+```
+
+```{r}
+New_Tesla %>%
+  count(Dscrip)
+```
+
+```{r}
+
+New_Tesla %>%
+  count(Dscrip) %>%
+  mutate(percent = n / sum(n) * 100)
+```
+
+DUI make up 2.5 percent of the Tesla deaths in the years 2013 - 2022.
