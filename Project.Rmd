@@ -2,14 +2,7 @@
 title: "Final Project (Tesla Death)"
 author: "Group 4 (CDS 101)"
 date: "`r Sys.Date()`"
-output:
-  html_document:
-    css: "gmu-cds101.css"
-    toc: true
-    toc_depth: 3
-    number_sections: true
-  pdf_document:
-    toc: true
+output: pdf_document
 ---
 
 ```{r}
