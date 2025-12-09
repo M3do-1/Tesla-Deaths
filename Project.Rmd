@@ -2,7 +2,14 @@
 title: "Final Project (Tesla Death)"
 author: "Group 4 (CDS 101)"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  html_document:
+    css: "gmu-cds101.css"
+    toc: true
+    toc_depth: 3
+    number_sections: true
+  pdf_document:
+    toc: true
 ---
 
 ```{r}
@@ -10,9 +17,7 @@ library(tidyverse)
 
 library(dplyr)
 
-```
-
-```{r}
+library(readr)
 Tesla_Deaths_Deaths_1_ <- read_csv("Tesla_Deaths_Deaths_1_.csv")
 
 New_Tesla <- Tesla_Deaths_Deaths_1_ %>%
