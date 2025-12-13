@@ -6,14 +6,20 @@ output: pdf_document
 ---
 
 ```{r}
-library(tidyverse)
-
-library(dplyr)
-
 library(readr)
-Tesla_Deaths_Deaths_1_ <- read_csv("Tesla_Deaths_Deaths_1_.csv")
+Tesla_Deaths_Deaths_3_ <- read_csv("Tesla_Deaths_Deaths_1_.csv")
+View(Tesla_Deaths_Deaths_3_)
+```
 
-New_Tesla <- Tesla_Deaths_Deaths_1_ %>%
+```{r}
+library(tidyverse)
+```
+```{r}
+library(dplyr)
+```
+
+```{r}
+New_Tesla <- Tesla_Deaths_Deaths_3_ %>%
 mutate(
 Dscrip = if_else(
 str_detect(Description, "DUI"),
@@ -23,10 +29,11 @@ str_detect(Description, "DUI"),
 )
 ```
 
+I used string detect to search for any description case that had the word DUI in it to collect and categorize the DUI from the other Tesla deaths
 
-
+```{r}
 view(New_Tesla)
-
+```
 
 ```{r}
 New_Tesla %>%
@@ -39,16 +46,258 @@ y = "Description"
 )
 ```
 
+ We selected the polygraph because the line are easier to read the differences. The colors were separated based on the two outcomes from the the new column. which were Red for the DUI and blue for the other category.  
+ 
 ```{r}
 New_Tesla %>%
   count(Dscrip)
 ```
 
 ```{r}
-
 New_Tesla %>%
   count(Dscrip) %>%
   mutate(percent = n / sum(n) * 100)
 ```
 
-DUI make up 2.5 percent of the Tesla deaths in the years 2013 - 2022.
+For our project we made a goal to find out how of the of the Tesla deaths were due to DUI. Our original hypothesis was the DUIs would make up 20% of the Tesla deaths.To our surprise the DUI deaths made up 3.14 percent of the Tesla deaths in the years 2013 - 2022. Looking at the trend of the data I would say the numbers may increase over time. Many of the deaths occur towards the later half of the data. I believe this is due to the increase in Tesla owners. Unfortunately we don't have access to that information. 
+
+
+```{r}
+New_Tesla2 <- New_Tesla %>%
+  mutate(
+    Year = as.numeric(Year),
+    DUI_num = if_else(Dscrip == "DUI", 1,0),
+    Oth_num = if_else(Dscrip == "other", 0,1)
+         )
+```
+
+
+```{r}
+view(New_Tesla2)
+```
+
+```{r}
+DUI_Year_model <- lm(DUI_num ~ Year, data = New_Tesla2)
+```
+
+
+```{r}
+Oth_Year_model <- lm(Oth_num ~ Year, data = New_Tesla2)
+```
+
+```{r}
+summary(DUI_Year_model)
+```
+
+```{r}
+library(modelr)
+```
+
+```{r}
+future_years <- data.frame( 
+  Year = max(New_Tesla2$Year, na.rm = TRUE) + 1:10
+  )
+```
+
+I created a new data set and that generated 10 extra years from the New_Tesla data set.
+
+```{r}
+fut_predictions <- future_years %>%
+add_predictions(DUI_Year_model, var = "DUI_probability") %>%
+add_predictions(Oth_Year_model, var = "Other_probability")
+```
+
+I attempted several different method to create a predictive model which ended up failing, this method seem to work best for me. I thought about using the information I gained from the previous data set and using that information to create a predictive model. 
+
+```{r}
+view(fut_predictions)
+```
+
+```{r}
+fut_predictions <- fut_predictions %>%
+  mutate(
+    Other_probability = 1 - DUI_probability,
+    Predicted_DUI = if_else(DUI_probability > 0.030, "DUI", "other"),
+    Predicted_Other = if_else(Other_probability > 0.97, "other", "OTH")
+    )
+```
+
+I ran into some trouble with this code. When I originally the code. I started by creating the DUI probability but felt the code need more information. So I decided to add the probability of the Other deaths as well. I used the number that I received when we received the percentages of collective DUI and collective other deaths. 
+
+```{r}
+fut_predictions
+```
+
+```{r}
+ggplot(fut_predictions) +
+geom_line(mapping = aes(x = Year, y = DUI_probability))
+```
+
+```{r}
+ggplot(fut_predictions) +
+geom_line(mapping = aes(x = Year, y = Other_probability))
+```
+
+After creating visuals for the probability this information seemed very stiff to me. So I decided to add more information to the dataset to try and improve the visual of the model that was created. 
+
+
+```{r}
+New_Tesla3 <- New_Tesla2 %>%
+  count(Year, Year_Tally = "n")
+```
+
+```{r}
+New_Tesla2 %>%
+  count(Year)
+```
+
+```{r}
+model_Vol <- lm(n ~ Year, data = New_Tesla3)
+summary(model_Vol)
+```
+
+I made a attempt to create a model that would generate numbers of incidents similar to what happened in the original data set but failed to produce results. So after several failed attempts I decided to use a linear prediction model. 
+
+```{r}
+future3 <- tibble(Year = 2023:2032)
+
+future_predictions_Vol <- future3 %>%
+  mutate(predicted_volume = predict(model_Vol, newdata = .))
+
+future_predictions_Vol
+```
+
+Looking at the new data set I knew the information was incomplete due to the numbers being decimals. We can't use this numbers for the data set so I rounded the number and placed the data into a new data set.     
+
+```{r}
+future4 <- tibble(Year = 2023:2032)
+
+future_predictions_Vol2 <- future3 %>%
+  mutate(
+  predicted_volume = predict(model_Vol, newdata = .),
+  predicted_volume = round(predicted_volume)
+  )
+future_predictions_Vol2
+```
+
+```{r}
+combined_prediction <- fut_predictions %>%
+  left_join(future_predictions_Vol2, by = "Year")
+```
+
+After completing the death total predictions I decided to combined data sets to place all the information in one place.  
+
+```{r}
+combined_prediction
+```
+
+I took a look at the information and felt as though the probability wouldn't be good enough on it's own so I decided to multiply the probability of the DUI and Other by the total number of deaths that year to get the predicted outcome. 
+
+```{r}
+combined_prediction2 <- combined_prediction %>%
+  mutate(
+    DUI_Results = round(DUI_probability * predicted_volume),
+    OTH_Results = round(Other_probability * predicted_volume)
+  )
+```
+
+```{r}
+combined_prediction2
+```
+
+Looking over the information I felt this was good enough to graph. 
+
+```{r}
+combined_prediction2 %>%
+ggplot(aes(x = Year, y = DUI_Results)) +
+geom_col(fill ="red") +
+labs(
+title = "DUI Tesla Death prediction",
+x = "year",
+y = "DUI"
+)
+```
+
+```{r}
+combined_prediction2 %>%
+ggplot(aes(x = Year, y = OTH_Results)) +
+geom_col(fill ="blue") +
+labs(
+title = "Other Tesla Deaths",
+x = "year",
+y = "Other"
+)
+```
+
+```{r}
+combined_graph <- combined_prediction2 %>%
+select(Year, DUI_Results, OTH_Results) %>%
+  pivot_longer(
+    cols = c(DUI_Results, OTH_Results),
+    names_to = "Results",
+    values_to = "Deaths"
+  )
+```
+
+I combined the death results into one column to use as a comparison graph. 
+
+```{r}
+combined_graph
+```
+
+The graph below shows the total deaths which parts are DUI compared to the other deaths. I actually wanted to have the DUI at the bottom and the other at the top, however I got burnout from the chunks of code and left as is. 
+
+```{r}
+combined_graph %>%
+ggplot() +
+geom_col(aes(x = Year, y = Deaths, fill = Results, )) +
+labs(
+title = "DUI vs Other Deaths",
+x = "year",
+y = "Deaths"
+)
+```
+
+```{r}
+Pred_Summary <- combined_graph %>%
+group_by(Year) %>%
+  summarize(
+    Total_Deaths = sum(Deaths),
+    DUI_Deaths = sum(Deaths[Results == "DUI_Results"]),
+    Other_Deaths = sum(Deaths[Results == "OTH_Results"]),
+  )
+```
+
+
+```{r}
+Pred_Summary
+```
+
+```{r}
+Pred_Summary2 <- Pred_Summary %>%
+  mutate(DUI_percent = DUI_Deaths / Total_Deaths * 100) %>%
+  mutate(OTH_percent = Other_Deaths / Total_Deaths * 100)
+```
+
+```{r}
+Pred_Summary2
+```
+
+The previous 4 chunks of code were actually an error that I made but this results seemed interesting so I decided to keep it. I meant to get a summary of the collective DUI deaths and Other deaths. 
+
+```{r}
+Pred_Summary3 <- Pred_Summary2 %>%
+  summarise(
+  SumTDeath = sum(Total_Deaths),
+  SumTDUI = sum(DUI_Deaths),
+  SumTOTH = sum(Other_Deaths)
+  ) 
+```
+
+I finished the code and found out according to our prediction the DUI would go up to 14 - 15% of Tesla deaths with in the range of 2023 - 2032. 
+
+```{r}
+Pred_Summary3%>%
+mutate(T_DUI_percent = SumTDUI / SumTDeath) %>%
+mutate(T_OTH_percent = SumTOTH / SumTDeath)
+```
