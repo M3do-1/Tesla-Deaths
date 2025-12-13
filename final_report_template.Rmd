@@ -1,6 +1,6 @@
 ---
-title: "CDS 101 – Final Project Report"
-author: "Group 4 / Ahmed D, Ahmed Hassan, John Stevenson"
+title: "CDS 101 – Final Project Report (Updated)"
+author: "Group 4 / Ahmed Dirar, Ahmed Hassan, John Stevenson"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
   html_document:
@@ -12,159 +12,256 @@ output:
     toc: true
 ---
 
-> Replace this template text with your own writing, keeping the headings and overall structure aligned with the **CDS 101 project rubric**.
-
 # 1. Problem Definition
 
-- How many of the Tesla deaths were the result of a DUI from the year 2013 to 2022 in the United States? We separated the data to find out if DUIs make up more than 20% of the Tesla deaths. We are assuming that the dataset given is accurate and detailed.
+**Research question:** How many Tesla deaths were the result of a DUI from **2013 to 2022**?
 
+**Goal:** Use the dataset to (1) label deaths as **DUI** vs **Other** using the accident description, (2) summarize trends by year, and (3) build a simple forecasting approach for what the next ~10 years *could* look like if historical patterns continued.
+
+**Assumptions / constraints:**
+
+- The dataset and the text descriptions are accurate.
+- Our DUI labeling is **rule-based** (we mark a row as DUI if "DUI" appears in the description). That means we may miss cases that describe impaired driving without using the exact term “DUI”.
 
 # 2. Data Acquisition & Description
 
-- Name of the data is Tesla Deaths (Updated 2023).
-- Description of the accident weither they were DUI or other.
-- Data was obtained from Kaggle link is: (https://www.kaggle.com/datasets/thedevastator/tesla-accident-fatalities-analysis-and-statistic).  
-- Approximate size (296 rows, 24 columns).
+- **Dataset:** *Tesla Accident Fatalities Analysis and Statistic (Updated 2023)* (Kaggle)
+- **Unit of analysis:** one row per case (fatal accident)
+- **Key columns used:** `Year`, `Description`
+- **Approximate size:** ~296 rows and ~24 columns (may vary slightly depending on the version downloaded)
 
-```{r setup-data, echo=FALSE, message=FALSE, warning=FALSE}
-# Example: load a dataset (replace with your own)
+```{r setup-data, message=FALSE, warning=FALSE}
 library(tidyverse)
-
-library(dplyr)
-
 library(readr)
-Tesla_Deaths_Deaths_1_ <- read_csv("Tesla_Deaths_Deaths_1_.csv")
+library(modelr)
+library(broom)
 
+tesla_raw <- read_csv("Tesla_Deaths_Deaths_1_.csv", show_col_types = FALSE)
+
+glimpse(tesla_raw)
 ```
 
 # 3. Data Cleaning & Preprocessing
 
-Describe the steps you took to make the data usable, for example:
+Main steps:
 
-- We used string detection to convert the Description column into “DUI” and “Other” this made the grouping clear and easy to follow.
-- We used a text classification model to model tesla deaths by DUI and non DUI. This allows for an easily reproducible method that is efficient. The baseline comparison allowed us to find if DUI deaths are common.
+1. Keep only the columns we need for this report (`Year`, `Description`) plus any identifiers if needed.
+2. Ensure `Year` is numeric.
+3. Create a new label column (`Dscrip`) using string detection:
+   - If `Description` contains "DUI" (case-insensitive) → label = `"DUI"`
+   - Otherwise → label = `"other"`
 
-```{r cleaning}
-New_Tesla <- Tesla_Deaths_Deaths_1_ %>%
-mutate(
-Dscrip = if_else(
-str_detect(Description, "DUI"),
-"DUI",
-"other"
-)
-)
+```{r cleaning, message=FALSE, warning=FALSE}
+tesla <- tesla_raw %>%
+  mutate(
+    Year = suppressWarnings(as.integer(Year)),
+    Dscrip = if_else(
+      str_detect(Description, regex("DUI", ignore_case = TRUE)),
+      "DUI",
+      "other"
+    )
+  ) %>%
+  filter(!is.na(Year))
+
+tesla %>% count(Dscrip)
 ```
 
-# 4. Exploratory Data Analysis (EDA)
+We also compute year-level counts (how many deaths per year in each category).
 
-This section maps directly to the **EDA** part of the rubric:
+```{r yearly-counts, message=FALSE, warning=FALSE}
+year_counts <- tesla %>%
+  count(Year, Dscrip, name = "Deaths") %>%
+  tidyr::pivot_wider(names_from = Dscrip, values_from = Deaths, values_fill = 0) %>%
+  mutate(
+    Total = DUI + other,
+    DUI_rate = if_else(Total > 0, DUI / Total, NA_real_)
+  ) %>%
+  arrange(Year)
 
-- Ggplot2 was used to perform visuals for our models.
-- DUI cases 2.5% of Tesla deaths between between the years 2013-2022. 97.5% of all other accidents are due to other causes. There is an increase in both categories as time goes on due to more Teslas being driven.
+year_counts
+```
 
-```{r eda-summary, message=FALSE, warning=FALSE}
-New_Tesla %>%
-ggplot() +
-geom_freqpoly(aes(x = Year, color = Dscrip, )) +
-labs(
-title = "DUI",
-x = "year",
-y = "Description"
-)
+# 4. Exploratory Data Analysis
+
+## Overall DUI share
+
+```{r overall-share, message=FALSE, warning=FALSE}
+overall_summary <- tesla %>%
+  count(Dscrip) %>%
+  mutate(percent = n / sum(n) * 100)
+
+overall_summary
+```
+
+## Trend over time (2013–2022)
+
+We plot the number of deaths by year for DUI vs Other.
+
+```{r plot-trend, message=FALSE, warning=FALSE}
+year_long <- tesla %>%
+  count(Year, Dscrip, name = "Deaths")
+
+ggplot(year_long, aes(x = Year, y = Deaths, color = Dscrip)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Tesla deaths by year: DUI vs Other",
+    x = "Year",
+    y = "Number of deaths",
+    color = "Category"
+  )
 ```
 
 # 5. Visualization Quality and Storytelling
 
-Use this section to satisfy the **Visualization Quality** rubric criterion:
-
-- We selected a frequency polygon (line graph) because the lines make it easy to see how the number of deaths changes over time and to compare DUI deaths to other deaths year by year.
-- We chose this plot type because the lines are easier to read when looking for differences between the two groups across years.
-- We used clear axis labels (Year on the x-axis and Number of Deaths on the y-axis) and a simple title so the viewer immediately understands what the plot is showing.
-- The background is kept clean with minimal gridlines and readable text so the viewer can focus on the patterns in the data instead of extra decoration.
+- We used a **line chart** because it makes *year-to-year changes* easy to see and compare between DUI and other deaths.
+- We kept the plot simple with clear labels and a legend so the story is readable at a glance.
+- We used consistent scales and minimal visual clutter to keep the focus on the trend.
 
 # 6. Modeling Approach
 
-- We framed this as a binary classification problem: DUI vs. Other.
-- We used a simple rule-based text model: check if “DUI” appears in Description.
-- Our baseline idea was that DUI deaths might be about 20% of cases.
-- This simple approach is transparent, easy to reproduce, and fits the small dataset.
+We used two lightweight models to forecast **2023–2032**:
+
+1. **DUI probability model (binomial logistic regression):**  
+   We model the *yearly DUI share* using year-level counts. This keeps the prediction in a valid 0–1 range.
+2. **Total deaths model (linear regression):**  
+   We model total deaths per year as a function of year.
+
+Then we combine them:
+
+- Predicted DUI deaths = `predicted_total * predicted_DUI_rate`
+- Predicted Other deaths = `predicted_total * (1 - predicted_DUI_rate)`
+
+This is simple, transparent, and fits the small dataset — but it is **not** a causal model and should be treated as a basic extrapolation.
 
 # 7. Model Implementation & Evaluation
 
-This corresponds to the **Model Implementation & Evaluation** rubric criterion.
+## Train/Test split (by year)
 
-Describe:
+To keep evaluation simple and realistic, we train on earlier years and test on the most recent years.
 
-A text classification model will be the model we will be using for the project separating tesla death by DUI and non DUI deaths. Ggplot2 will be used to perform visuals for our models . We used the geom freqploy to  plot our graph for visuals.
+```{r split-data, message=FALSE, warning=FALSE}
+train <- year_counts %>% filter(Year <= 2020)
+test  <- year_counts %>% filter(Year > 2020)
 
-```{r modeling, eval=FALSE}
-New_Tesla %>%
-  count(Dscrip) %>%
-  mutate(percent = n / sum(n) * 100)
+nrow(train); nrow(test)
 ```
 
-# 8. Conclusions & Recommendations
+## Fit models
 
-Summarize the key takeaways:
+```{r fit-models, message=FALSE, warning=FALSE}
+# Binomial model for DUI share (uses counts)
+dui_model <- glm(cbind(DUI, other) ~ Year, data = train, family = binomial())
 
-For our project we made a goal to find out how of the of the Tesla deaths were due to DUI. Our original hypothesis was the DUIs would make up 20% of the Tesla deaths.To our surprise the DUI deaths made up 2.5 percent of the Tesla deaths in the years 2013 - 2022. Looking at the trend of the data I would say the numbers may increase over time. Many of the deaths occur towards the later half of the data. I believe this is due to the increase in Tesla owners. Unfortunately we don't have access to that information.
+# Linear model for yearly volume (total deaths)
+vol_model <- lm(Total ~ Year, data = train)
 
-# 9. Code Quality & Reproducibility
-
-- Briefly document how someone else can reproduce your results:
-- All work is in a single R Markdown file for transparency.
-- We list required packages (tidyverse, dplyr, readr) in the setup chunk.
-- The CSV file is read in using a relative file path.
-- Knitting the Rmd fully reproduces the cleaning, plots, and summary results.
-
-```{r session-info, echo=FALSE}
-library(tidyverse)
-
-library(dplyr)
-
-library(readr)
-Tesla_Deaths_Deaths_1_ <- read_csv("Tesla_Deaths_Deaths_1_.csv")
-
-New_Tesla <- Tesla_Deaths_Deaths_1_ %>%
-mutate(
-Dscrip = if_else(
-str_detect(Description, "DUI"),
-"DUI",
-"other"
-)
-)
-
-
-view(New_Tesla)
-
-New_Tesla %>%
-ggplot() +
-geom_freqpoly(aes(x = Year, color = Dscrip, )) +
-labs(
-title = "DUI",
-x = "year",
-y = "Description"
-)
-
-
-
-New_Tesla %>%
-  count(Dscrip)
-
-
-New_Tesla %>%
-  count(Dscrip) %>%
-  mutate(percent = n / sum(n) * 100)
+summary(dui_model)
+summary(vol_model)
 ```
 
-# 10. References
+## Evaluate on the test years
 
-List any references you used, such as:
+We compare our models to a simple baseline:
 
-- R Documentation (https://r4ds.hadley.nz/strings.html).
-- Kaggle dataset: Tesla Accident Fatalities Analysis and Statistics (Updated 2023):
-  (https://www.kaggle.com/datasets/thedevastator/tesla-accident-fatalities-analysis-and-statistic)
+- Baseline DUI rate = average DUI rate in training years.
+- Baseline volume = average yearly total in training years.
+
+Metrics: **MAE** (Mean Absolute Error) for total deaths and DUI deaths on the test set.
+
+```{r evaluate, message=FALSE, warning=FALSE}
+# model predictions on test
+test_pred <- test %>%
+  mutate(
+    pred_dui_rate = predict(dui_model, newdata = ., type = "response"),
+    pred_total = pmax(0, predict(vol_model, newdata = .)),
+    pred_dui = round(pred_total * pred_dui_rate),
+    pred_other = round(pred_total * (1 - pred_dui_rate))
+  )
+
+# baseline predictions on test
+baseline_dui_rate <- sum(train$DUI) / sum(train$Total)
+baseline_total <- mean(train$Total)
+
+test_pred <- test_pred %>%
+  mutate(
+    base_total = round(baseline_total),
+    base_dui = round(Total * baseline_dui_rate)
+  )
+
+mae <- function(actual, predicted) mean(abs(actual - predicted), na.rm = TRUE)
+
+eval_table <- tibble(
+  Metric = c("MAE (Total deaths)", "MAE (DUI deaths)"),
+  Baseline = c(
+    mae(test_pred$Total, test_pred$base_total),
+    mae(test_pred$DUI, test_pred$base_dui)
+  ),
+  Model = c(
+    mae(test_pred$Total, test_pred$pred_total),
+    mae(test_pred$DUI, test_pred$pred_dui)
+  )
+)
+
+eval_table
+```
+
+## Forecast 2023–2032
+
+```{r forecast, message=FALSE, warning=FALSE}
+future_years <- tibble(Year = 2023:2032)
+
+forecast <- future_years %>%
+  mutate(
+    pred_dui_rate = predict(dui_model, newdata = ., type = "response"),
+    pred_total = pmax(0, predict(vol_model, newdata = .)),
+    DUI_Deaths = round(pred_total * pred_dui_rate),
+    Other_Deaths = round(pred_total * (1 - pred_dui_rate))
+  )
+
+forecast
+```
+
+### Forecast visualization
+
+```{r forecast-plot, message=FALSE, warning=FALSE}
+forecast_long <- forecast %>%
+  select(Year, DUI_Deaths, Other_Deaths) %>%
+  pivot_longer(cols = c(DUI_Deaths, Other_Deaths),
+               names_to = "Category",
+               values_to = "Deaths")
+
+ggplot(forecast_long, aes(x = Year, y = Deaths, fill = Category)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Forecasted Tesla deaths (2023–2032): DUI vs Other",
+    x = "Year",
+    y = "Predicted deaths"
+  )
+```
+
+# 8. Conclusions & Future Work
+
+**What we found (2013–2022):**
+- Using the text-based rule, we labeled each case as DUI vs Other and summarized the DUI share of deaths.
+- The yearly trend plot shows how both categories change over time.
+
+**Forecast (2023–2032):**
+- We produced a simple forecast by combining a DUI-share model and a total-deaths model. This should be treated as an *informal projection* rather than a definitive prediction.
+
+**Future improvements:**
+- Improve labeling beyond the single keyword “DUI” (include terms like “intoxicated”, “drunk”, “BAC”, etc. and manually validate a sample).
+- Include more predictors if available (location, vehicle model, Autopilot mentions, etc.).
+- Compare multiple model types (Poisson regression for counts, time-series methods) and do cross-validation by year.
+
+# 9. References
+
+- R for Data Science (strings): https://r4ds.hadley.nz/strings.html  
+- Kaggle dataset: Tesla Accident Fatalities Analysis and Statistics (Updated 2023):  
+  https://www.kaggle.com/datasets/thedevastator/tesla-accident-fatalities-analysis-and-statistic
 
 # Appendix (Optional)
 
-Include extra plots, diagnostic checks, or model comparisons if needed.
+```{r appendix-session-info, message=FALSE, warning=FALSE}
+sessionInfo()
+```
